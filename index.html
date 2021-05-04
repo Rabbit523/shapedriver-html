@@ -1,0 +1,168 @@
+<html>
+
+<head>
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.4.0/jquery.min.js"></script>
+    <!-- ShapeDiver Viewer API reflector, sets the global variable SDVReflector -->
+    <!-- <script defer src="https://d363mqea3saz7f.cloudfront.net/v2/2.2.0/sdv.concat.min.js"></script>
+    <script src="https://d363mqea3saz7f.cloudfront.net/v2/2.2.0/sdv_reflector.min.js"></script> -->
+    <script defer src="https://viewer.shapediver.com/v2/2.10.0/sdv.concat.min.js"></script>
+    <script src="https://viewer.shapediver.com/v2/2.10.0/sdv_reflector.min.js"></script>
+
+    <style>
+        .row {
+            background: #f8f9fa;
+            margin-top: 20px;
+        }
+
+        .col {
+            border: solid 1px #6c757d;
+            padding: 10px;
+        }
+    </style>
+</head>
+
+<body>
+    <!-- 
+  Bootstrap docs: https://getbootstrap.com/docs
+-->
+
+    <div class="container">
+        <div class="row">
+            <div class="col">
+
+                <!-- begin ShapeDiver iframe -->
+                <!-- Uncomment this script if you want to see messages received from the iframe in the browser console -->
+                <!-- -->
+                <!-- <script>
+                    window.addEventListener('message', console.log, false);
+                </script> -->
+                <!-- -->
+
+                <iframe id='sdv-iframe' width="100%" height="480"
+                    src="https://viewer.shapediver.com/v2/2.10.0/iframe/remote.html?modelViewUrl=eu-central-1&showControlsInitial=1&brandedMode=false&ticket=dc9e4e43dafce5e18f02896d87f58656cf1904cc14958bfec102a9ac5e2773c495ac011086e8cc31d02aa937ad873deb6d01881dde82f9dfe81b94923eae5c944a669e1db09450cd2f32b5ba6b52a8da7147bdcfcbec8dd8c8e41f4d02da692a10ec418a00ca52eb173d6ff311052b45f163ce75ce9b-743ed8a8ff447fabd8b3ec231b6e96bc"
+                    referrerpolicy="origin" allowfullscreen scrolling="no"
+                    style="overflow-x: hidden; overflow-y: hidden; border-width: 0;">
+                    <p>Your browser does not support iframes.</p>
+                </iframe>
+
+                <!-- end ShapeDiver iframe -->
+            </div>
+        </div>
+        <div class="row">
+            <div class="col-12 my-4 text-center">
+                <button class="btn btn-rounded btn-lg btn-primary px-5" type="button" id="get-quote">Get quote</button>
+            </div>
+        </div>
+        <div class="row">
+            <div class="col-12 hidden" id="quote"></div>
+            <div class="col-12 text-right" id="quote"><button id="show_json" class="btn btn-xs">Show/hide JSON</button>
+            </div>
+            <div class="col-12 hidden" id="api_response">
+                <p>API response:</p>
+                <textarea name="capturedData" id="capturedData" cols="30" rows="40" style="width: 100%"></textarea>
+            </div>
+        </div>
+
+
+        <script>
+            //$.getScript("assets/js/accounting.min.js");
+
+            $(document).ready(function () {
+                var $capturedData = $('#capturedData');
+                var capturedData = '';
+
+                $('#get-quote').click(function () {
+                    console.log("API Parameters: ");
+
+                    let promise = api.parameters.getAsync();
+                    promise.then(function (result) {
+                        console.log(result);
+                    });
+
+                    api.scene.getDataAsync().then(function (result) {
+
+                        var json_data = JSON.stringify(result, null, 2);
+                        $capturedData.val(json_data); // Show whole object in textarea as string
+
+                        // POST the data via Ajax and get response
+                        $.post("{{ $is_admin ? '/admin' : '' }}/shapediver/quote?blank", {
+                            data: json_data
+                        }, function (response) {
+                            $("#quote").html(response).removeClass('hidden');
+                            equaliseHeights();
+                        });
+
+                    }, function (err) {
+                        $capturedData.val('Error!');
+                    });
+
+                });
+
+                $('#show_json').on('click', function () {
+                    $('#api_response').toggleClass('hidden');
+                });
+            });
+
+            var api; //define once, to use multiple times afterwards
+
+            window.addEventListener('message', function (event) {
+                console.log(event);
+                if (event.data && typeof event.data === 'object') {
+                    if (event.data.type === 'sdv-ViewerLoaded') {
+                        console.log('ShapeDiver Viewer initialisation finished', event.data);
+                        api = SDVReflector.get('api');
+                    } else if (event.data.type === 'sdv-CommPluginLoaded') {
+                        console.log('ShapeDiver CommPlugin successfully loaded', event.data);
+                        api.parameters.getAsync().then(function (result) {
+                            console.log('Available model parameters', result.data);
+                        });
+                    }
+                }
+            }, false);
+            // window.addEventListener('message', (event) => {
+            //     console.log(event);
+            //     // if (event.data.type == 'sdv-CommPluginLoaded') {
+            //     //     api = SDVReflector.get('api');
+            //     //     api.parameters.addEventListenerAsync(api.parameters.EVENTTYPE.VALUE_UPDATE, paramUpdateCallback);
+            //     //     api.scene.addEventListenerAsync(api.scene.EVENTTYPE.SUBSCENE_PUBLISHED, scenePublishedCallback); //SUBSCENE_PUBLISHED
+            //     // }
+            // }, false);
+
+            function scenePublishedCallback(event) {
+                let promise = api.updateSettingAsync("camera.zoomExtentsFactor", 1);
+                promise.then(function (result) {
+                    console.log("Default zoom:");
+                    console.log(result);
+                });
+            }
+
+            function paramUpdateCallback(event) {
+                console.log('Change of controls detected');
+                // update div with placeholder message (to remove existing quote)
+                $("#quote").html('<div class="row bg-white my-3 py-5"><div class="col-3"></div><div class="col-6 text-center"><div class="alert alert-info" role="alert"><span class="fs-16 text-black">Please click "Get quote" again to refresh the quote.</span></div></div></div>');
+                let promise = api.parameters.getAsync();
+                promise.then(function (result) {
+                    //data is an array of parameter values
+                    console.log(result);
+                });
+            }
+
+            function equaliseHeights() {
+                var maxHeight = 0;
+
+                $("#quote .elements").each(function () {
+                    console.log('Height: ' + $(this).height());
+                    if ($(this).height() > maxHeight) {
+                        maxHeight = $(this).height();
+                    }
+                });
+
+                if (maxHeight > 0)
+                    $(".elements").height(maxHeight);
+            }
+
+        </script>
+    </div>
+</body>
+
+</html>
